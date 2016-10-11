@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"k8s.io/kops/upup/pkg/api"
+	"k8s.io/kops/upup/pkg/api/registry"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/nodeup/cloudinit"
 	"k8s.io/kops/upup/pkg/fi/nodeup/local"
@@ -96,7 +97,7 @@ func (c *NodeUpCommand) Run(out io.Writer) error {
 				return fmt.Errorf("error parsing ClusterLocation %q: %v", clusterLocation, err)
 			}
 		} else {
-			p = configBase.Join(api.PathClusterCompleted)
+			p = configBase.Join(registry.PathClusterCompleted)
 		}
 
 		b, err := p.ReadFile()
@@ -198,12 +199,13 @@ func (c *NodeUpCommand) Run(out io.Writer) error {
 	case "direct":
 		target = &local.LocalTarget{
 			CacheDir: c.CacheDir,
+			Tags:     tags,
 		}
 	case "dryrun":
 		target = fi.NewDryRunTarget(out)
 	case "cloudinit":
 		checkExisting = false
-		target = cloudinit.NewCloudInitTarget(out)
+		target = cloudinit.NewCloudInitTarget(out, tags)
 	default:
 		return fmt.Errorf("unsupported target type %q", c.Target)
 	}

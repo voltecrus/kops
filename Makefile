@@ -1,6 +1,6 @@
 all: kops
 
-.PHONY: channels
+.PHONY: channels examples
 
 DOCKER_REGISTRY?=gcr.io/must-override
 S3_BUCKET?=s3://must-override/
@@ -14,7 +14,9 @@ GOVERSION=1.6
 # See http://stackoverflow.com/questions/18136918/how-to-get-current-relative-directory-of-your-makefile
 MAKEDIR:=$(strip $(shell dirname "$(realpath $(lastword $(MAKEFILE_LIST)))"))
 
-TAG=1.4
+# Keep in sync with upup/models/cloudup/resources/addons/dns-controller/
+DNS_CONTROLLER_TAG=1.4.1
+PROTOKUBE_TAG=1.4.0
 
 ifndef VERSION
   VERSION := git-$(shell git describe --always)
@@ -96,20 +98,22 @@ gcs-publish-ci: gcs-upload
 	echo "${GCS_URL}/${VERSION}" > .build/upload/${LATEST_FILE}
 	gsutil cp .build/upload/${LATEST_FILE} ${GCS_LOCATION}
 
-push: nodeup-dist
-	scp -C .build/dist/nodeup  ${TARGET}:/tmp/
+# Assumes running on linux for speed (todo: crossbuild on OSX?)
+push: nodeup-gocode
+	scp -C ${GOPATH_1ST}/bin/nodeup  ${TARGET}:/tmp/
 
 push-gce-dry: push
-	ssh ${TARGET} sudo SKIP_PACKAGE_UPDATE=1 /var/cache/kubernetes-install/nodeup --conf=metadata://gce/config --dryrun --v=8
+	ssh ${TARGET} sudo SKIP_PACKAGE_UPDATE=1 /tmp/nodeup --conf=metadata://gce/config --dryrun --v=8
 
 push-aws-dry: push
-	ssh ${TARGET} sudo SKIP_PACKAGE_UPDATE=1 /var/cache/kubernetes-install/nodeup --conf=/var/cache/kubernetes-install/kube_env.yaml --dryrun --v=8
+	ssh ${TARGET} sudo SKIP_PACKAGE_UPDATE=1 /tmp/nodeup --conf=/var/cache/kubernetes-install/kube_env.yaml --dryrun --v=8
 
 push-gce-run: push
-	ssh ${TARGET} sudo SKIP_PACKAGE_UPDATE=1 /var/cache/kubernetes-install/nodeup --conf=metadata://gce/config --v=8
+	ssh ${TARGET} sudo SKIP_PACKAGE_UPDATE=1 /tmp/nodeup --conf=metadata://gce/config --v=8
 
+# -t is for CentOS http://unix.stackexchange.com/questions/122616/why-do-i-need-a-tty-to-run-sudo-if-i-can-sudo-without-a-password
 push-aws-run: push
-	ssh ${TARGET} sudo SKIP_PACKAGE_UPDATE=1 /tmp/nodeup --conf=/var/cache/kubernetes-install/kube_env.yaml --v=8
+	ssh -t ${TARGET} sudo SKIP_PACKAGE_UPDATE=1 /tmp/nodeup --conf=/var/cache/kubernetes-install/kube_env.yaml --v=8
 
 
 
@@ -123,10 +127,10 @@ protokube-build-in-docker: protokube-builder-image
 	docker run -it -e VERSION=${VERSION} -v `pwd`:/src protokube-builder /onbuild.sh
 
 protokube-image: protokube-build-in-docker
-	docker build -t ${DOCKER_REGISTRY}/protokube:${TAG} -f images/protokube/Dockerfile .
+	docker build -t ${DOCKER_REGISTRY}/protokube:${PROTOKUBE_TAG} -f images/protokube/Dockerfile .
 
 protokube-push: protokube-image
-	docker push ${DOCKER_REGISTRY}/protokube:${TAG}
+	docker push ${DOCKER_REGISTRY}/protokube:${PROTOKUBE_TAG}
 
 
 
@@ -154,10 +158,10 @@ dns-controller-build-in-docker: dns-controller-builder-image
 	docker run -it -e VERSION=${VERSION} -v `pwd`:/src dns-controller-builder /onbuild.sh
 
 dns-controller-image: dns-controller-build-in-docker
-	docker build -t ${DOCKER_REGISTRY}/dns-controller:${TAG}  -f images/dns-controller/Dockerfile .
+	docker build -t ${DOCKER_REGISTRY}/dns-controller:${DNS_CONTROLLER_TAG}  -f images/dns-controller/Dockerfile .
 
 dns-controller-push: dns-controller-image
-	docker push ${DOCKER_REGISTRY}/dns-controller:${TAG}
+	docker push ${DOCKER_REGISTRY}/dns-controller:${DNS_CONTROLLER_TAG}
 
 # --------------------------------------------------
 # development targets
@@ -192,3 +196,8 @@ channels: channels-gocode
 channels-gocode:
 	go install ${EXTRA_BUILDFLAGS} -ldflags "-X main.BuildVersion=${VERSION} ${EXTRA_LDFLAGS}" k8s.io/kops/channels/cmd/channels
 
+# --------------------------------------------------
+# API / embedding examples
+
+examples:
+	go install k8s.io/kops/examples/kops-api-example/...
